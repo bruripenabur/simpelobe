@@ -1,0 +1,6 @@
+{
+  "name": "Portal Ekosistem Digital OBE - Universitas Pattimura",
+  "description": "Sistem terintegrasi end-to-end (Siklus PPEPP) Pusat Kurikulum dan Inovasi Pembelajaran Universitas Pattimura untuk perancangan kurikulum, RPS, buku ajar, rubrik, portofolio nilai, pengukuran CPL, hingga CQI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
