@@ -1,15 +1,19 @@
-import { DEFAULT_SUPABASE_KEY_PLACEHOLDER } from '../constants/modules';
-import { CycleChecklistStep, ObeRpsRecord, StatusSiklusValue, SupabaseSettings } from '../types/obe';
+import { User } from '@supabase/supabase-js';
+import { getSupabaseClient, isPlaceholderKey } from '../lib/ssoAuth';
+import {
+  CycleChecklistStep,
+  ObeRpsRecord,
+  StatusSiklusValue,
+  SsoUserMetadata,
+  SupabaseSettings,
+} from '../types/obe';
+
+export { isPlaceholderKey };
 
 export interface FetchRpsResult {
   records: ObeRpsRecord[];
   error: string | null;
   needsKey: boolean;
-}
-
-export function isPlaceholderKey(key: string): boolean {
-  const trimmed = key.trim();
-  return !trimmed || trimmed === DEFAULT_SUPABASE_KEY_PLACEHOLDER || trimmed.startsWith('[');
 }
 
 export function isConfiguredModuleUrl(rawUrl: string): boolean {
@@ -20,26 +24,7 @@ export function isConfiguredModuleUrl(rawUrl: string): boolean {
   return /^https?:\/\/.+/i.test(trimmed);
 }
 
-export function buildModuleLaunchUrl(rawUrl: string, activeRpsId: string): string {
-  const trimmed = rawUrl.trim();
-  if (!isConfiguredModuleUrl(trimmed)) {
-    return '';
-  }
-  if (!activeRpsId) {
-    return trimmed;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    parsed.searchParams.set('rps_id', activeRpsId);
-    return parsed.toString();
-  } catch {
-    const separator = trimmed.includes('?') ? '&' : '?';
-    return `${trimmed}${separator}rps_id=${encodeURIComponent(activeRpsId)}`;
-  }
-}
-
 export async function fetchObeRpsList(settings: SupabaseSettings): Promise<FetchRpsResult> {
-  const baseUrl = settings.url.trim().replace(/\/+$/, '');
   const apiKey = settings.publishableKey.trim();
 
   if (isPlaceholderKey(apiKey)) {
@@ -50,43 +35,36 @@ export async function fetchObeRpsList(settings: SupabaseSettings): Promise<Fetch
     };
   }
 
-  if (!baseUrl) {
+  const client = getSupabaseClient(settings);
+  if (!client) {
     return {
       records: [],
-      error: 'URL Supabase belum diisi.',
-      needsKey: false,
+      error: 'URL atau Publishable Key Supabase belum valid.',
+      needsKey: true,
     };
   }
 
   try {
-    const endpoint = `${baseUrl}/rest/v1/obe_rps?select=id,kode_mk,nama_mk,prodi,status_siklus&order=kode_mk.asc`;
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        apikey: apiKey,
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    const { data, error } = await client
+      .from('obe_rps')
+      .select('*')
+      .order('kode_mk', { ascending: true });
 
-    if (!response.ok) {
-      let detail = '';
-      try {
-        const errJson = await response.json();
-        detail = errJson?.message || errJson?.hint || '';
-      } catch {
-        detail = response.statusText;
-      }
+    if (error) {
+      const msg = error.message || 'Gagal mengambil data tabel obe_rps.';
+      const isAuthErr =
+        msg.toLowerCase().includes('jwt') ||
+        msg.toLowerCase().includes('api key') ||
+        error.code === '42501';
       return {
         records: [],
-        error: `Gagal memuat daftar RPS dari Supabase (HTTP ${response.status}${detail ? `: ${detail}` : ''}).`,
-        needsKey: response.status === 401 || response.status === 403,
+        error: `Gagal memuat daftar RPS dari Supabase: ${msg}`,
+        needsKey: isAuthErr,
       };
     }
 
-    const data = (await response.json()) as ObeRpsRecord[];
     return {
-      records: Array.isArray(data) ? data : [],
+      records: Array.isArray(data) ? (data as ObeRpsRecord[]) : [],
       error: null,
       needsKey: false,
     };
@@ -98,6 +76,49 @@ export async function fetchObeRpsList(settings: SupabaseSettings): Promise<Fetch
       needsKey: false,
     };
   }
+}
+
+export function doesRpsBelongToUser(rps: ObeRpsRecord, user: User | null): boolean {
+  if (!user) return false;
+  const meta = (user.user_metadata || {}) as SsoUserMetadata;
+  const userEmail = (user.email || '').trim().toLowerCase();
+  const userNidn = (meta.nidn || '').trim().toLowerCase();
+  const userFullName = (meta.full_name || '').trim().toLowerCase();
+
+  const candidateIds = [rps.user_id, rps.dosen_id, rps.created_by, rps.owner_id];
+  if (candidateIds.some((id) => typeof id === 'string' && id === user.id)) {
+    return true;
+  }
+
+  const candidateEmails = [rps.email, rps.dosen_email, rps.email_dosen];
+  if (
+    userEmail &&
+    candidateEmails.some(
+      (em) => typeof em === 'string' && em.trim().toLowerCase() === userEmail
+    )
+  ) {
+    return true;
+  }
+
+  const candidateNidns = [rps.nidn, rps.nidn_dosen];
+  if (
+    userNidn &&
+    candidateNidns.some(
+      (n) => typeof n === 'string' && n.trim().toLowerCase() === userNidn
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    userFullName &&
+    typeof rps.dosen_pengampu === 'string' &&
+    rps.dosen_pengampu.toLowerCase().includes(userFullName)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function isTruthyFlag(val: unknown): boolean {

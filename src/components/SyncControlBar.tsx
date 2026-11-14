@@ -5,17 +5,23 @@ import {
   BookMarked,
   CheckCircle2,
   Circle,
+  Filter,
   KeyRound,
   Link2,
   RefreshCw,
   Settings,
   X,
 } from 'lucide-react';
-import { isPlaceholderKey, parseStatusSiklus } from '../services/supabaseClient';
-import { ObeRpsRecord, SupabaseSettings } from '../types/obe';
+import { isPlaceholderKey } from '../lib/ssoAuth';
+import { parseStatusSiklus } from '../services/supabaseClient';
+import { ObeRpsRecord, RpsOwnershipFilter, SupabaseSettings } from '../types/obe';
 
 interface SyncControlBarProps {
   rpsList: ObeRpsRecord[];
+  totalRpsCount: number;
+  mineRpsCount: number;
+  ownershipFilter: RpsOwnershipFilter;
+  onChangeOwnershipFilter: (filter: RpsOwnershipFilter) => void;
   selectedRpsId: string;
   onSelectRps: (rpsId: string) => void;
   loading: boolean;
@@ -28,6 +34,10 @@ interface SyncControlBarProps {
 
 export function SyncControlBar({
   rpsList,
+  totalRpsCount,
+  mineRpsCount,
+  ownershipFilter,
+  onChangeOwnershipFilter,
   selectedRpsId,
   onSelectRps,
   loading,
@@ -48,7 +58,7 @@ export function SyncControlBar({
     >
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
             <label
               htmlFor="active-rps-select"
               className="flex items-center gap-2 text-sm font-bold text-[#0b3d91]"
@@ -57,9 +67,36 @@ export function SyncControlBar({
               <span>Pilih Mata Kuliah / RPS Aktif (Opsional)</span>
             </label>
 
-            <span className="text-xs text-slate-500">
-              Jembatan Antar-Modul · Sinkronisasi parameter <code className="font-mono text-[#0b3d91] bg-blue-50 px-1.5 py-0.5 rounded">?rps_id</code>
-            </span>
+            {/* Filter RPS Milik Saya vs Semua RPS Prodi */}
+            <div
+              className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200"
+              role="group"
+              aria-label="Filter Kepemilikan RPS"
+            >
+              <Filter className="w-3.5 h-3.5 text-slate-500 ml-1.5 mr-0.5 shrink-0 hidden sm:inline-block" />
+              <button
+                type="button"
+                onClick={() => onChangeOwnershipFilter('mine')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                  ownershipFilter === 'mine'
+                    ? 'bg-[#0b3d91] text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Tampilkan RPS Milik Saya ({mineRpsCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeOwnershipFilter('all_prodi')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                  ownershipFilter === 'all_prodi'
+                    ? 'bg-[#0b3d91] text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Tampilkan Semua RPS Prodi ({totalRpsCount})
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
@@ -67,16 +104,18 @@ export function SyncControlBar({
               id="active-rps-select"
               value={selectedRpsId}
               onChange={(e) => onSelectRps(e.target.value)}
-              disabled={loading || (keyIsMissing && rpsList.length === 0)}
+              disabled={loading || (keyIsMissing && totalRpsCount === 0)}
               className="flex-1 min-w-0 bg-white border border-slate-300 text-slate-800 text-sm rounded-xl px-3.5 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0b3d91] focus:border-[#0b3d91] disabled:bg-slate-100 disabled:text-slate-500 transition-colors"
             >
               <option value="">
                 {loading
                   ? 'Memuat daftar mata kuliah dari Supabase...'
-                  : keyIsMissing && rpsList.length === 0
+                  : keyIsMissing && totalRpsCount === 0
                     ? '-- Masukkan Publishable Key Supabase untuk memuat tabel obe_rps --'
                     : rpsList.length === 0
-                      ? '-- Tidak ada data RPS pada tabel obe_rps --'
+                      ? ownershipFilter === 'mine' && totalRpsCount > 0
+                        ? '-- Belum ada RPS milik Anda (alih ke Semua RPS Prodi) --'
+                        : '-- Tidak ada data RPS pada tabel obe_rps --'
                       : '-- Semua Modul (Tanpa Konteks Mata Kuliah Tertentu) --'}
               </option>
               {rpsList.map((rps) => (
@@ -124,6 +163,22 @@ export function SyncControlBar({
           </div>
         </div>
       </div>
+
+      {ownershipFilter === 'mine' && mineRpsCount === 0 && totalRpsCount > 0 && !loading && (
+        <div className="mt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl bg-blue-50 border border-blue-200 px-3.5 py-2.5 text-xs text-slate-700">
+          <span>
+            Belum ditemukan data RPS yang terhubung langsung dengan akun Anda pada tabel{' '}
+            <code className="font-mono font-semibold text-[#0b3d91]">obe_rps</code>.
+          </span>
+          <button
+            type="button"
+            onClick={() => onChangeOwnershipFilter('all_prodi')}
+            className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#0b3d91] hover:bg-blue-900 text-white font-semibold transition-colors shrink-0 whitespace-nowrap"
+          >
+            Lihat Semua RPS Prodi ({totalRpsCount})
+          </button>
+        </div>
+      )}
 
       {keyIsMissing && !loading && (
         <div className="mt-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-xs text-amber-900">
@@ -190,7 +245,7 @@ export function SyncControlBar({
               <span className="font-mono truncate max-w-[240px]">
                 ?rps_id={selectedRps.id}
               </span>
-              <span>aktif di semua modul</span>
+              <span>+ SSO aktif di semua modul</span>
             </div>
           </div>
 

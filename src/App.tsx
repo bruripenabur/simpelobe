@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Session } from '@supabase/supabase-js';
 import { AdminSettingsModal } from './components/AdminSettingsModal';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { ModuleCard } from './components/ModuleCard';
+import { SsoAuthGate } from './components/SsoAuthGate';
 import { SyncControlBar } from './components/SyncControlBar';
 import {
   CAMPUS_BG_URL,
@@ -11,8 +13,20 @@ import {
   OBE_MODULES,
   STORAGE_KEYS,
 } from './constants/modules';
-import { fetchObeRpsList } from './services/supabaseClient';
-import { ModuleId, ModuleUrlMap, ObeRpsRecord, SupabaseSettings } from './types/obe';
+import {
+  getSupabaseClient,
+  readStoredSsoSession,
+  saveSsoSession,
+  signOutSso,
+} from './lib/ssoAuth';
+import { doesRpsBelongToUser, fetchObeRpsList } from './services/supabaseClient';
+import {
+  ModuleId,
+  ModuleUrlMap,
+  ObeRpsRecord,
+  RpsOwnershipFilter,
+  SupabaseSettings,
+} from './types/obe';
 
 function loadStoredModuleUrls(): ModuleUrlMap {
   try {
@@ -56,15 +70,85 @@ export default function App() {
     loadStoredSupabaseSettings
   );
 
+  // SSO Auth Session state
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [loggingOut, setLoggingOut] = useState<boolean>(false);
+
+  // RPS list & ownership filter state
   const [rpsList, setRpsList] = useState<ObeRpsRecord[]>([]);
+  const [ownershipFilter, setOwnershipFilter] = useState<RpsOwnershipFilter>('all_prodi');
   const [selectedRpsId, setSelectedRpsId] = useState<string>(getInitialSelectedRpsId);
   const [loadingRps, setLoadingRps] = useState<boolean>(false);
   const [rpsError, setRpsError] = useState<string | null>(null);
   const [needsKey, setNeedsKey] = useState<boolean>(false);
 
+  // Admin Settings modal state
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [modalTab, setModalTab] = useState<'modules' | 'supabase'>('modules');
   const [focusedModuleId, setFocusedModuleId] = useState<ModuleId | null>(null);
+
+  // Initialize & subscribe to Supabase Auth SSO state
+  useEffect(() => {
+    const client = getSupabaseClient(supabaseSettings);
+    if (!client) {
+      setSession(null);
+      setAuthLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    const initAuth = async () => {
+      setAuthLoading(true);
+      try {
+        const { data } = await client.auth.getSession();
+        let activeSession = data.session;
+
+        if (!activeSession) {
+          const storedTokens = readStoredSsoSession();
+          if (storedTokens) {
+            const restored = await client.auth.setSession({
+              access_token: storedTokens.access_token,
+              refresh_token: storedTokens.refresh_token,
+            });
+            activeSession = restored.data.session;
+          }
+        }
+
+        if (isMounted) {
+          if (activeSession) {
+            saveSsoSession(activeSession);
+          }
+          setSession(activeSession);
+        }
+      } catch {
+        if (isMounted) {
+          setSession(null);
+        }
+      } finally {
+        if (isMounted) {
+          setAuthLoading(false);
+        }
+      }
+    };
+
+    void initAuth();
+
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) return;
+      saveSsoSession(nextSession);
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [supabaseSettings]);
 
   const loadRpsRecords = useCallback(async (settings: SupabaseSettings) => {
     setLoadingRps(true);
@@ -86,8 +170,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    void loadRpsRecords(supabaseSettings);
-  }, [loadRpsRecords, supabaseSettings]);
+    if (session) {
+      void loadRpsRecords(supabaseSettings);
+    } else {
+      setRpsList([]);
+    }
+  }, [session, loadRpsRecords, supabaseSettings]);
+
+  const mineRpsList = useMemo(() => {
+    if (!session?.user) return [];
+    return rpsList.filter((rps) => doesRpsBelongToUser(rps, session.user));
+  }, [rpsList, session]);
+
+  const displayedRpsList = useMemo(() => {
+    return ownershipFilter === 'mine' ? mineRpsList : rpsList;
+  }, [ownershipFilter, mineRpsList, rpsList]);
+
+  useEffect(() => {
+    if (selectedRpsId && !displayedRpsList.some((r) => r.id === selectedRpsId)) {
+      if (displayedRpsList.length > 0 || ownershipFilter === 'mine') {
+        // Pertahankan pilihan hanya jika ada di list aktif
+        if (ownershipFilter === 'mine') {
+          setSelectedRpsId('');
+        }
+      }
+    }
+  }, [displayedRpsList, ownershipFilter, selectedRpsId]);
 
   const handleSelectRps = (rpsId: string) => {
     setSelectedRpsId(rpsId);
@@ -99,6 +207,23 @@ export default function App() {
       }
     } catch {
       // Ignore storage quota errors
+    }
+  };
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      const client = getSupabaseClient(supabaseSettings);
+      await signOutSso(client);
+      setSession(null);
+      setSelectedRpsId('');
+      try {
+        localStorage.removeItem(STORAGE_KEYS.ACTIVE_RPS_ID);
+      } catch {
+        // Ignore storage error
+      }
+    } finally {
+      setLoggingOut(false);
     }
   };
 
@@ -136,7 +261,11 @@ export default function App() {
         backgroundAttachment: 'fixed',
       }}
     >
-      <Header />
+      <Header
+        user={session?.user ?? null}
+        onLogout={() => void handleLogout()}
+        loggingOut={loggingOut}
+      />
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
         {/* Hero Section dengan lapisan overlay gelap sangat tipis (bg-slate-900/25) hanya di area teks judul utama */}
@@ -153,33 +282,54 @@ export default function App() {
           </div>
         </section>
 
-        {/* Bilah Sinkronisasi Mata Kuliah Aktif */}
-        <SyncControlBar
-          rpsList={rpsList}
-          selectedRpsId={selectedRpsId}
-          onSelectRps={handleSelectRps}
-          loading={loadingRps}
-          error={rpsError}
-          needsKey={needsKey}
-          supabaseSettings={supabaseSettings}
-          onRefresh={() => void loadRpsRecords(supabaseSettings)}
-          onOpenAdminSettings={(tab) => handleOpenSettings(tab, null)}
-        />
-
-        {/* Grid Kartu Glassmorphism 7 Modul Terintegrasi */}
-        <section aria-label="Daftar Modul Ekosistem Digital OBE">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {OBE_MODULES.map((mod) => (
-              <ModuleCard
-                key={mod.id}
-                module={mod}
-                configuredUrl={moduleUrls[mod.id]}
-                activeRpsId={selectedRpsId}
-                onEditUrl={(id) => handleOpenSettings('modules', id)}
-              />
-            ))}
+        {authLoading ? (
+          <div className="max-w-md mx-auto bg-white/95 backdrop-blur-md rounded-2xl p-8 shadow-xl border border-white/60 text-center">
+            <div className="w-8 h-8 border-4 border-[#0b3d91] border-t-[#ffcc00] rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm font-semibold text-slate-700">
+              Memeriksa sesi Single Sign-On (SSO)...
+            </p>
           </div>
-        </section>
+        ) : !session ? (
+          <SsoAuthGate
+            supabaseSettings={supabaseSettings}
+            onOpenSupabaseConfig={() => handleOpenSettings('supabase', null)}
+          />
+        ) : (
+          <>
+            {/* Bilah Sinkronisasi Mata Kuliah Aktif */}
+            <SyncControlBar
+              rpsList={displayedRpsList}
+              totalRpsCount={rpsList.length}
+              mineRpsCount={mineRpsList.length}
+              ownershipFilter={ownershipFilter}
+              onChangeOwnershipFilter={setOwnershipFilter}
+              selectedRpsId={selectedRpsId}
+              onSelectRps={handleSelectRps}
+              loading={loadingRps}
+              error={rpsError}
+              needsKey={needsKey}
+              supabaseSettings={supabaseSettings}
+              onRefresh={() => void loadRpsRecords(supabaseSettings)}
+              onOpenAdminSettings={(tab) => handleOpenSettings(tab, null)}
+            />
+
+            {/* Grid Kartu Glassmorphism 7 Modul Terintegrasi */}
+            <section aria-label="Daftar Modul Ekosistem Digital OBE">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {OBE_MODULES.map((mod) => (
+                  <ModuleCard
+                    key={mod.id}
+                    module={mod}
+                    configuredUrl={moduleUrls[mod.id]}
+                    activeRpsId={selectedRpsId}
+                    session={session}
+                    onEditUrl={(id) => handleOpenSettings('modules', id)}
+                  />
+                ))}
+              </div>
+            </section>
+          </>
+        )}
       </main>
 
       <Footer />

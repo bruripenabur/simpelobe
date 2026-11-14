@@ -1,4 +1,4 @@
-import { ModuleUrlMap, ObeModuleDefinition, SupabaseSettings } from '../types/obe';
+import { ModuleUrlMap, ObeModuleDefinition, SsoRole, SupabaseSettings } from '../types/obe';
 
 export const CAMPUS_BG_URL =
   'https://upload.wikimedia.org/wikipedia/commons/e/e2/Foto_Universitas-Patimura.webp';
@@ -9,10 +9,21 @@ export const UNPATTI_LOGO_URL =
 export const DEFAULT_SUPABASE_URL = 'https://eysccwxpgdcoqfvaalye.supabase.co';
 export const DEFAULT_SUPABASE_KEY_PLACEHOLDER = '[MASUKKAN_PUBLISHABLE_KEY_SUPABASE_ANDA]';
 
+export const SSO_COOKIE_NAME = 'simpatti_sso_session';
+export const SSO_ROOT_DOMAIN = '.simpatti.site';
+export const SSO_COOKIE_MAX_AGE = 604800; // 7 hari
+
+export const SSO_ROLES: SsoRole[] = [
+  'Dosen Pengampu',
+  'Ketua Program Studi',
+  'Admin LPMPP',
+];
+
 export const STORAGE_KEYS = {
-  MODULE_URLS: 'unpatti_obe_module_urls_v1',
+  MODULE_URLS: 'unpatti_obe_module_urls_v2',
   SUPABASE_CONFIG: 'unpatti_obe_supabase_config_v1',
   ACTIVE_RPS_ID: 'unpatti_obe_active_rps_id_v1',
+  SSO_SESSION_FALLBACK: 'simpatti_sso_session',
 } as const;
 
 export const OBE_MODULES: ObeModuleDefinition[] = [
@@ -26,7 +37,7 @@ export const OBE_MODULES: ObeModuleDefinition[] = [
     description:
       'Fondasi kurikulum program studi untuk merumuskan Profil Lulusan, CPL, dan matriks pembebanan CPL ke setiap Mata Kuliah.',
     buttonLabel: 'Buka Master Kurikulum →',
-    defaultUrl: '[URL_MODUL_0]',
+    defaultUrl: 'https://kurikulum.simpatti.site',
     isFoundation: true,
   },
   {
@@ -39,7 +50,7 @@ export const OBE_MODULES: ObeModuleDefinition[] = [
     description:
       'Tools cerdas berbasis AI untuk merumuskan CPMK, Sub-CPMK, peta pembelajaran 16 minggu, dan bobot asesmen berbasis OBE.',
     buttonLabel: 'Buka Modul RPS →',
-    defaultUrl: 'https://desain-rpsobe.netlify.app/',
+    defaultUrl: 'https://rps.simpatti.site',
   },
   {
     id: 'modul-2',
@@ -51,7 +62,7 @@ export const OBE_MODULES: ObeModuleDefinition[] = [
     description:
       'Menyusun naskah buku ajar komprehensif 16 bab berbasis RPS OBE, integrasi riset/PkM/SDGs, beserta kisi-kisi evaluasi TIU dan TKD.',
     buttonLabel: 'Buka Modul Buku Ajar →',
-    defaultUrl: '[URL_MODUL_BUKU_AJAR]',
+    defaultUrl: 'https://bukuajar.simpatti.site',
   },
   {
     id: 'modul-3',
@@ -63,7 +74,7 @@ export const OBE_MODULES: ObeModuleDefinition[] = [
     description:
       'Menyusun instrumen tugas, kuis, UTS, UAS, beserta matriks rubrik analitis bergradasi yang selaras dengan Sub-CPMK.',
     buttonLabel: 'Buka Modul Rubrik →',
-    defaultUrl: 'https://sirubrik.netlify.app/',
+    defaultUrl: 'https://rubrik.simpatti.site',
   },
   {
     id: 'modul-4',
@@ -75,7 +86,7 @@ export const OBE_MODULES: ObeModuleDefinition[] = [
     description:
       'Input nilai mahasiswa berbasis indikator rubrik serta unggah sampel karya terbaik/sedang/kurang dan BAP sebagai bukti audit.',
     buttonLabel: 'Buka Buku Nilai & Portofolio →',
-    defaultUrl: '[URL_MODUL_4]',
+    defaultUrl: 'https://portofolio.simpatti.site',
   },
   {
     id: 'modul-5',
@@ -87,7 +98,7 @@ export const OBE_MODULES: ObeModuleDefinition[] = [
     description:
       'Kalkulasi otomatis ketercapaian CPMK dan CPL mata kuliah dari buku nilai rubrik, lengkap dengan laporan evaluasi dosen.',
     buttonLabel: 'Buka Modul Asesmen CPL →',
-    defaultUrl: 'https://simpel-cpl.netlify.app/',
+    defaultUrl: 'https://cpl.simpatti.site',
   },
   {
     id: 'modul-6',
@@ -99,7 +110,7 @@ export const OBE_MODULES: ObeModuleDefinition[] = [
     description:
       'Agregasi capaian CPL lintas mata kuliah untuk LED Akreditasi & RTM, transkrip CPL mahasiswa, serta log tindak lanjut CQI.',
     buttonLabel: 'Buka Dashboard CQI Prodi →',
-    defaultUrl: '[URL_MODUL_6]',
+    defaultUrl: 'https://cqi.simpatti.site',
   },
 ];
 

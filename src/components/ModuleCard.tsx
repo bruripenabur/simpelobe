@@ -1,3 +1,4 @@
+import { Session } from '@supabase/supabase-js';
 import {
   Award,
   BarChart3,
@@ -8,13 +9,15 @@ import {
   Layers,
   Pencil,
 } from 'lucide-react';
-import { buildModuleLaunchUrl, isConfiguredModuleUrl } from '../services/supabaseClient';
+import { buildSsoModuleUrl } from '../lib/ssoAuth';
+import { isConfiguredModuleUrl } from '../services/supabaseClient';
 import { ModuleId, ObeModuleDefinition } from '../types/obe';
 
 interface ModuleCardProps {
   module: ObeModuleDefinition;
   configuredUrl: string;
   activeRpsId: string;
+  session: Session | null;
   onEditUrl: (moduleId: ModuleId) => void;
 }
 
@@ -32,11 +35,13 @@ export function ModuleCard({
   module,
   configuredUrl,
   activeRpsId,
+  session,
   onEditUrl,
 }: ModuleCardProps) {
   const Icon = MODULE_ICONS[module.id];
   const isUrlReady = isConfiguredModuleUrl(configuredUrl);
-  const launchUrl = buildModuleLaunchUrl(configuredUrl, activeRpsId);
+  const launchUrl = buildSsoModuleUrl(configuredUrl, activeRpsId, session);
+  const hasSsoHash = launchUrl.includes('#sso_token=');
 
   return (
     <article
@@ -112,8 +117,12 @@ export function ModuleCard({
 
         <div className="flex items-center gap-2 text-xs text-slate-500 min-w-0">
           {isUrlReady ? (
-            <span className="truncate font-mono text-[11px]" title={launchUrl}>
-              {activeRpsId ? `Terhubung ?rps_id=${activeRpsId.slice(0, 8)}…` : configuredUrl}
+            <span className="truncate font-mono text-[11px]" title={configuredUrl}>
+              {activeRpsId
+                ? `?rps_id=${activeRpsId.slice(0, 8)}…${hasSsoHash ? ' + SSO' : ''}`
+                : hasSsoHash
+                  ? `${configuredUrl.replace(/^https?:\/\//, '')} · SSO aktif`
+                  : configuredUrl}
             </span>
           ) : (
             <button

@@ -36,6 +36,15 @@ export interface ObeRpsRecord {
   nama_mk: string;
   prodi: string | null;
   status_siklus: StatusSiklusValue;
+  user_id?: string | null;
+  created_by?: string | null;
+  dosen_id?: string | null;
+  owner_id?: string | null;
+  nidn?: string | null;
+  email?: string | null;
+  dosen_email?: string | null;
+  dosen_pengampu?: string | null;
+  [key: string]: unknown;
 }
 
 export interface CycleChecklistStep {
@@ -48,3 +57,20 @@ export interface SupabaseSettings {
   url: string;
   publishableKey: string;
 }
+
+export type SsoRole = 'Dosen Pengampu' | 'Ketua Program Studi' | 'Admin LPMPP';
+
+export interface SsoUserMetadata {
+  full_name?: string;
+  nidn?: string;
+  prodi?: string;
+  role?: SsoRole | string;
+  peran?: SsoRole | string;
+}
+
+export interface SsoTokenPayload {
+  access_token: string;
+  refresh_token: string;
+}
+
+export type RpsOwnershipFilter = 'mine' | 'all_prodi';
